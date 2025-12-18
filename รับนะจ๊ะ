@@ -1,0 +1,80 @@
+from umqtt.simple import MQTTClient
+import network
+import time
+import ubinascii
+import machine
+
+# 1. ตั้งค่า Hardware (GPIO2 คือ LED บนบอร์ด ESP32 ส่วนใหญ่)
+led = machine.Pin(5, machine.Pin.OUT)
+
+# 2. เชื่อมต่อ WiFi
+ssid = 'OFF_B01_01'
+password = '12345678'
+station = network.WLAN(network.STA_IF)
+station.active(True)
+station.connect(ssid, password)
+
+while not station.isconnected():
+    print("Connecting to WiFi...")
+    time.sleep(1)
+print('WiFi Connected:', station.ifconfig())
+
+# 3. กำหนด Topic ให้ตรงกับ index.html
+TOPIC_CMD = b'esp32/gpio5/cmd'
+TOPIC_STATUS = b'esp32/gpio5/status'
+client_id = 'clientId-3DE0gnEJ60' + ubinascii.hexlify(machine.unique_id()).decode()
+
+# 4. ฟังก์ชันจัดการเมื่อได้รับข้อความจากหน้าเว็บ
+def on_message(topic, msg):
+    command = msg.decode().strip()
+    print(f"Received command: {command}")
+
+    if command == "1":
+        led.value(0) # สลับจาก 1 เป็น 0 เพื่อให้ไฟติด (Active Low) 
+        client.publish(TOPIC_STATUS, "1") # ยังส่ง "1" กลับไปบอกเว็บว่า "เปิดแล้วนะ"
+        print("LED turned ON")
+    elif command == "0":
+        led.value(1) # สลับจาก 0 เป็น 1 เพื่อให้ไฟดับ 
+        client.publish(TOPIC_STATUS, "0") # ยังส่ง "0" กลับไปบอกเว็บว่า "ปิดแล้วนะ"
+        print("LED turned OFF")
+    elif command == "status":
+        # ส่งสถานะปัจจุบันกลับไปเมื่อเว็บร้องขอ (ตอนโหลดหน้าเว็บใหม่)
+        current = "1" if led.value() else "0"
+        client.publish(TOPIC_STATUS, current)
+
+# 5. เชื่อมต่อ MQTT Broker
+client = MQTTClient(client_id, 'broker.hivemq.com')
+client.set_callback(on_message)
+client.connect()
+client.subscribe(TOPIC_CMD)
+print('Connected to MQTT Broker and Subscribed to CMD topic')
+
+# 6. Loop หลัก
+try:
+    while True:
+        client.check_msg() # ตรวจสอบข้อความใหม่จาก MQTT
+        time.sleep(0.5)
+except Exception as e:
+    print("Error:", e)
+    machine.reset() # หากหลุดให้ Restart เครื่องใหม่
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
